@@ -2,14 +2,31 @@ var request = require("request");
 var cheerio = require("cheerio");
 const puppeteer = require('puppeteer');
 const { createWorker } = require('tesseract.js');
+const Tesseract = require('tesseract.js');
 const sharp = require('sharp');
 var Jimp = require("jimp");
 const { spawn } = require('child_process');
+// const tesseract = require("node-tesseract-ocr")
+const fs = require('fs');
 
-async function writeForm(page) {
-    const worker = await createWorker('eng');
+async function login(page) {
+
+    let currText = await handlePic(page)
+    // 填寫表單
+    await page.type('input#ACCOUNT', "H125272475");
+    await page.type('input#PASSWORD', "allen6311");
+    await page.type('input#CHK', currText);
+    await page.waitForTimeout(1000);
+    await page.evaluate(() => {
+        document.querySelector('a button.red').click();
+    });
+}
+
+async function handlePic(page) {
+    // const worker = await createWorker('eng');
     const captchaElement = await page.$('#chk_pic');
     const captchaScreenshot = await captchaElement.screenshot();
+
 
     const preprocessedImage = await sharp(captchaScreenshot)
         .gamma(1.2) // 調整亮度
@@ -17,23 +34,32 @@ async function writeForm(page) {
         .sharpen()
         .toBuffer();
 
-    const { data: { text } } = await worker.recognize(preprocessedImage);
-    // 使用白名單字符集，只保留合法字符
-    const whitelist = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    let filteredText = '';
-    filteredText = text.split('').filter(char => whitelist.includes(char)).join('');
+    fs.writeFileSync('preprocessed.jpg', preprocessedImage);
 
-    // 填寫表單
-    await page.type('input#ACCOUNT', "H125272475");
-    await page.type('input#PASSWORD', "allen6311");
-    await page.type('input#CHK', filteredText);
-    await page.waitForTimeout(1000);
-    await page.evaluate(() => {
-        document.querySelector('a button.red').click();
+    let currText = ''
+    const result = await Tesseract.recognize("./preprocessed.jpg", "eng", {
+        oem: 1, // OCR Engine Mode，默认为 3，尝试不同的值
+        psm: 11, // Page Segmentation Mode，默认为 3，尝试不同的值
     });
+    currText = result.data.text;
+    // const { data: { text } } = await worker.recognize(preprocessedImage);
+    // 使用白名單字符集，只保留合法字符
+    const whitelist = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    let filteredText = '';
+    filteredText = currText.split('').filter(char => whitelist.includes(char)).join('');
+    return filteredText
 }
 
 
+async function addCart(page) {
+    let currText = await handlePic(page)
+    console.log('currText', currText)
+    await page.type("input#CHK", currText)
+    await page.waitForTimeout(1000);
+    await page.evaluate(() => {
+        document.querySelector('#addcart button.red').click();
+    });
+}
 
 async function start() {
     const browser = await puppeteer.launch({ headless: false });
@@ -43,7 +69,7 @@ async function start() {
     //   await page.goto('http://127.0.0.1:5500/index.html');
     await page.goto(url)
     await page.waitForTimeout(1000);
-    await writeForm(page)
+    await login(page)
 
     // await page.waitForNavigation();
     await page.waitForTimeout(1000);
@@ -59,9 +85,9 @@ async function start() {
             document.querySelector('input#PASSWORD').value = '';
             document.querySelector('input#CHK').value = '';
         });
-        await page.waitForTimeout(2000);
+        await page.waitForTimeout(1000);
 
-        await writeForm(page)
+        await login(page)
         await page.waitForTimeout(1000);
         currentURL = page.url();
     }
@@ -108,6 +134,33 @@ async function start() {
             })
         });
     })
+
+    const posUrl = 'https://kham.com.tw/application/UTK02/UTK0205_.aspx?PERFORMANCE_ID=P0CGXPYB&GROUP_ID=1&PERFORMANCE_PRICE_AREA_ID=P0CH2QSJ'
+    currentURL = posUrl
+
+    // console.log(currentURL)
+    while (currentURL === posUrl) {
+        console.log('加入購物車失敗！');
+        await page.waitForSelector('input#CHK');
+        await page.evaluate(() => {
+            document.querySelector('input#CHK').value = '';
+        })
+
+        await addCart(page)
+        await page.waitForTimeout(1000);
+
+        // 等待元素出现
+        await page.waitForSelector('.ui-dialog-buttonset  button.ui-button');
+        await page.evaluate(() => {
+            document.querySelector('.ui-dialog-buttonset  button.ui-button').click();
+        });
+        await page.waitForTimeout(1000);
+
+        currentURL = page.url();
+    }
+
+
+    console.log('加入購物車成功')
 
     //   await browser.close();
 }
