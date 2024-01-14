@@ -6,11 +6,10 @@ const Tesseract = require('tesseract.js');
 const sharp = require('sharp');
 var Jimp = require("jimp");
 const { spawn } = require('child_process');
-// const tesseract = require("node-tesseract-ocr")
+const tesseract = require("node-tesseract-ocr")
 const fs = require('fs');
 
 async function login(page) {
-
     let currText = await handlePic(page)
     // 填寫表單
     await page.type('input#ACCOUNT', "H125272475");
@@ -24,29 +23,63 @@ async function login(page) {
 
 async function handlePic(page) {
     // const worker = await createWorker('eng');
-    const captchaElement = await page.$('#chk_pic');
-    const captchaScreenshot = await captchaElement.screenshot();
 
+    const captchaElement = await page.$('#chk_pic');
+    // const captchaScreenshot = await captchaElement.screenshot();
+    const captchaBoundingBox = await captchaElement.boundingBox();
+    console.log('captchaBoundingBox', captchaBoundingBox)
+
+    // 捕获屏幕截图
+    const captchaScreenshot = await captchaElement.screenshot({
+        clip: {
+            x: captchaBoundingBox.x,
+            y: captchaBoundingBox.y,
+            width: Math.ceil(captchaBoundingBox.width),
+            height: Math.ceil(captchaBoundingBox.height),
+        }
+    });
 
     const preprocessedImage = await sharp(captchaScreenshot)
-        .gamma(1.2) // 調整亮度
-        .normalize() // 正規化
-        .sharpen()
-        .toBuffer();
+        .resize({ width: captchaBoundingBox.width, height: captchaBoundingBox.height, fit: 'contain'})
+        .gamma(2) // 調整亮度
 
-    fs.writeFileSync('preprocessed.jpg', preprocessedImage);
+        .modulate({//飽和
+            // brightness:1.5,
+            saturation:1.5,
+        })
+
+        // // .clahe({
+        // //     width:80,
+        // //     height:30,
+        // //     maxSlope:100
+        // // })
+
+        .normalise()
+        .normalize() // 正規化
+        .grayscale()
+        .sharpen()
+        // .toBuffer();
+        .toFile("preprocessed.jpg")
+
+
+    // fs.writeFileSync('preprocessed.jpg', preprocessedImage);
 
     let currText = ''
-    const result = await Tesseract.recognize("./preprocessed.jpg", "eng", {
-        oem: 1, // OCR Engine Mode，默认为 3，尝试不同的值
-        psm: 11, // Page Segmentation Mode，默认为 3，尝试不同的值
+    const result = await Tesseract.recognize("./preprocessed.jpg", 'eng', {
+        oem: 0, // OCR Engine Mode，默认为 3，尝试不同的值
+        psm: 1, // Page Segmentation Mode，默认为 3，尝试不同的值
     });
+
+
+
+
     currText = result.data.text;
+    console.log('currText', currText)
     // const { data: { text } } = await worker.recognize(preprocessedImage);
     // 使用白名單字符集，只保留合法字符
     const whitelist = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
     let filteredText = '';
-    filteredText = currText.split('').filter(char => whitelist.includes(char)).join('');
+    filteredText = currText.split('').filter(char => whitelist.includes(char) && char !== ' ').join('');
     return filteredText
 }
 
@@ -105,7 +138,6 @@ async function start() {
         const table = document.querySelector("#AREA_DIV table")
         const rows = table.querySelectorAll("tr");
         rows.forEach((row, index) => {
-            // console.log(`Row ${index + 1}:`, row.textContent); // 輸出表格行的內容
             if (row.textContent.includes("3980")) {
                 const tdToClick = row.querySelector("td");
                 tdToClick.click();
@@ -138,7 +170,7 @@ async function start() {
     const posUrl = 'https://kham.com.tw/application/UTK02/UTK0205_.aspx?PERFORMANCE_ID=P0CGXPYB&GROUP_ID=1&PERFORMANCE_PRICE_AREA_ID=P0CH2QSJ'
     currentURL = posUrl
 
-    // console.log(currentURL)
+    //加入購物車
     while (currentURL === posUrl) {
         console.log('加入購物車失敗！');
         await page.waitForSelector('input#CHK');
@@ -154,14 +186,10 @@ async function start() {
         await page.evaluate(() => {
             document.querySelector('.ui-dialog-buttonset  button.ui-button').click();
         });
-        await page.waitForTimeout(1000);
+        // await page.waitForTimeout(1000);
 
         currentURL = page.url();
     }
-
-
     console.log('加入購物車成功')
-
-    //   await browser.close();
 }
 start()
