@@ -8,12 +8,13 @@ var Jimp = require("jimp");
 const { spawn } = require('child_process');
 const tesseract = require("node-tesseract-ocr")
 const fs = require('fs');
+const secretInfo = require('./account')
 
 async function login(page) {
     let currText = await handlePic(page)
     // 填寫表單
-    await page.type('input#ACCOUNT', "H125272475");
-    await page.type('input#PASSWORD', "allen6311");
+    await page.type('input#ACCOUNT', secretInfo.account);
+    await page.type('input#PASSWORD', secretInfo.password);
     await page.type('input#CHK', currText);
     await page.waitForTimeout(1000);
     await page.evaluate(() => {
